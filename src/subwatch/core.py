@@ -12,6 +12,7 @@ import datetime
 import pathlib
 import re
 import statistics
+from dataclasses import dataclass, field
 
 DATE_KEYS = (
     "transaction date", "date", "posted", "posting date", "booked", "value date",
@@ -25,8 +26,12 @@ AMOUNT_KEYS = ("amount", "betrag", "transaction amount", "value", "sum", "montan
 DEBIT_KEYS = ("debit", "withdrawal", "paid out", "soll", "ausgang", "retrait")
 CREDIT_KEYS = ("credit", "deposit", "paid in", "haben", "eingang", "depot")
 
-MONTHS = {name: index for index, name in enumerate(
-    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
+MONTHS = {
+    name: index
+    for index, name in enumerate(
+        ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], start=1
+    )
+}
 
 NOISE = re.compile(
     r"\b(pos|purchase|payment|pmt|card|debit|credit|visa|mastercard|amex|online|www|com|inc|ltd|limited|llc|usa|gbr|ire|sepa|direct|ref|txn|transaction|id|order|store)\b"
@@ -39,6 +44,57 @@ CADENCES = (
     ("quarterly", 91, 10),
     ("yearly", 365, 30),
 )
+
+
+@dataclass
+class Transaction:
+    date: datetime.date
+    description: str
+    amount: float
+    source: str = ""
+
+    @property
+    def is_charge(self):
+        return self.amount < 0
+
+    def to_dict(self):
+        return {
+            "date": self.date.isoformat(),
+            "description": self.description,
+            "amount": round(self.amount, 2),
+            "source": self.source,
+        }
+
+
+@dataclass
+class Subscription:
+    merchant: str
+    key: str
+    cadence: str
+    amount: float
+    count: int
+    first_seen: datetime.date
+    last_seen: datetime.date
+    next_expected: datetime.date
+    annual_cost: float
+    price_change: float = 0.0
+    confidence: float = 0.0
+    samples: tuple = field(default=())
+
+    def to_dict(self):
+        return {
+            "merchant": self.merchant,
+            "key": self.key,
+            "cadence": self.cadence,
+            "amount": self.amount,
+            "count": self.count,
+            "first_seen": self.first_seen.isoformat(),
+            "last_seen": self.last_seen.isoformat(),
+            "next_expected": self.next_expected.isoformat(),
+            "annual_cost": self.annual_cost,
+            "price_change": self.price_change,
+            "confidence": self.confidence,
+        }
 
 
 def parse_amount(value):
@@ -138,7 +194,6 @@ def _detect_columns(headers):
 def _rows(path):
     text = pathlib.Path(path).read_text(encoding="utf-8-sig", errors="replace")
     sample = text[:8192]
-    delimiter = ","
     try:
         delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
     except csv.Error:
